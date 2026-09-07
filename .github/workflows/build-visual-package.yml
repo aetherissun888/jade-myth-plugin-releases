@@ -29,9 +29,11 @@ jobs:
       - name: Check out approved source commit
         uses: actions/checkout@v4
         with:
-          repository: aetherissun888/jade-myth
+          repository: aetherissun888/jade-and-myth
           ref: ${{ inputs.source_ref }}
           path: source
+          ssh-key: ${{ secrets.SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
 
       - name: Build and verify complete plugin archive
         env:
