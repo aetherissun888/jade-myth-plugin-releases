@@ -1,0 +1,83 @@
+name: Build Jade & Myth visual package
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact jade-myth commit to package
+        required: true
+        type: string
+      version:
+        description: Expected visual-system version
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: visual-package
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release repository
+        uses: actions/checkout@v4
+
+      - name: Check out approved source commit
+        uses: actions/checkout@v4
+        with:
+          repository: aetherissun888/jade-myth
+          ref: ${{ inputs.source_ref }}
+          path: source
+
+      - name: Build and verify complete plugin archive
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import zipfile
+          from pathlib import Path
+
+          source = Path('source/automation-plugin/jade-myth-visual-system')
+          plugin = source / 'jade-myth-visual-system.php'
+          text = plugin.read_text(encoding='utf-8')
+          match = re.search(r"JADE_MYTH_VISUAL_VERSION',\s*'([^']+)'", text)
+          if not match or match.group(1) != os.environ['EXPECTED_VERSION']:
+              raise SystemExit('Source version does not match requested release version')
+
+          archive_path = Path('jade-myth-visual-system.zip')
+          with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+              for path in sorted(source.rglob('*')):
+                  if path.is_file():
+                      archive.write(path, Path('jade-myth-visual-system') / path.relative_to(source))
+
+          with zipfile.ZipFile(archive_path) as archive:
+              names = set(archive.namelist())
+              required = {
+                  'jade-myth-visual-system/jade-myth-visual-system.php',
+                  'jade-myth-visual-system/chinese-symbols-folio.css',
+                  'jade-myth-visual-system/inc/chinese-symbols-folio.php',
+              }
+              missing = required - names
+              if missing:
+                  raise SystemExit(f'Missing package files: {sorted(missing)}')
+              if archive.testzip() is not None:
+                  raise SystemExit('Archive integrity check failed')
+              print(f'Packaged {len(names)} files for version {match.group(1)}')
+          PY
+
+      - name: Publish versioned package
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add jade-myth-visual-system.zip
+          git commit -m "Release visual system ${RELEASE_VERSION}" -m "Source: aetherissun888/jade-myth@${SOURCE_REF}"
+          git push
